@@ -27,6 +27,7 @@
     width: 100vw;
     height: 100vh;
     overflow: hidden;
+    touch-action: none;
   }
   /* MindAR injects its own <video> (camera feed) and <canvas> into #container.
      Force the video to fill the screen behind the canvas so the feed is visible. */
@@ -65,7 +66,7 @@
   /* Drag anywhere on this circle to rotate the model */
   #grab-zone {
     position: absolute;
-    bottom: 110px;
+    bottom: 190px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 7;
@@ -115,7 +116,7 @@
   }
   #reset-btn {
     position: absolute;
-    bottom: 132px;
+    bottom: 212px;
     right: 24px;
     z-index: 7;
     padding: 9px 14px;
@@ -266,23 +267,81 @@ function endDrag(e) {
   grabZone.classList.remove('grabbed');
   grabLabel.textContent = 'Drag';
   if (targetFound) {
-    statusEl.textContent = "Drag the circle to rotate the model";
+    statusEl.textContent = "Drag the circle to rotate · pinch to resize";
   }
 }
 
 grabZone.addEventListener('pointerup', endDrag);
 grabZone.addEventListener('pointercancel', endDrag);
 
+// ---------------------------------------------------------------------
+// Pinch to zoom — two fingers anywhere on the screen
+// ---------------------------------------------------------------------
+let targetScale = 1;
+let curScale = 1;
+const MIN_SCALE = 0.4;
+const MAX_SCALE = 3.5;
+
+let pinchStartDist = 0;
+let pinchBaseScale = 1;
+const activePointers = new Map();
+
+function pinchDistance() {
+  const pts = [...activePointers.values()];
+  if (pts.length < 2) return 0;
+  const dx = pts[0].x - pts[1].x;
+  const dy = pts[0].y - pts[1].y;
+  return Math.hypot(dx, dy);
+}
+
+const containerEl = document.querySelector('#container');
+
+containerEl.addEventListener('pointerdown', (e) => {
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size === 2) {
+    pinchStartDist = pinchDistance();
+    pinchBaseScale = targetScale;
+    // A pinch takes over from any single-finger rotation in progress
+    endDrag();
+    statusEl.textContent = "Pinch to resize the model";
+  }
+});
+
+containerEl.addEventListener('pointermove', (e) => {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size === 2 && pinchStartDist > 0) {
+    e.preventDefault();
+    const ratio = pinchDistance() / pinchStartDist;
+    targetScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, pinchBaseScale * ratio));
+  }
+});
+
+function releasePointer(e) {
+  activePointers.delete(e.pointerId);
+  if (activePointers.size < 2) {
+    pinchStartDist = 0;
+    if (targetFound && !isDragging) {
+      statusEl.textContent = "Drag the circle to rotate · pinch to resize";
+    }
+  }
+}
+
+containerEl.addEventListener('pointerup', releasePointer);
+containerEl.addEventListener('pointercancel', releasePointer);
+containerEl.addEventListener('pointerleave', releasePointer);
+
 resetBtn.addEventListener('click', () => {
   targetRotY = 0;
   targetRotX = 0;
+  targetScale = 1;
 });
 
 anchor.onTargetFound = () => {
   targetFound = true;
   grabZone.classList.add('visible');
   resetBtn.classList.add('visible');
-  statusEl.textContent = "Drag the circle to rotate the model";
+  statusEl.textContent = "Drag the circle to rotate · pinch to resize";
 };
 anchor.onTargetLost = () => {
   targetFound = false;
@@ -337,11 +396,13 @@ function loadModel() {
 // ---------------------------------------------------------------------
 function animate() {
   renderer.setAnimationLoop(() => {
-    // Ease toward the target rotation so dragging feels smooth
+    // Ease toward the target rotation and scale so gestures feel smooth
     curRotY += (targetRotY - curRotY) * 0.15;
     curRotX += (targetRotX - curRotX) * 0.15;
+    curScale += (targetScale - curScale) * 0.15;
     modelGroup.rotation.y = curRotY;
     modelGroup.rotation.x = curRotX;
+    modelGroup.scale.setScalar(curScale);
     renderer.render(scene, camera);
   });
 }
