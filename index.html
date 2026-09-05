@@ -68,14 +68,10 @@
       el.textContent = msg;
     }
   };
-  window.__checkpoint('Loading Three.js...');
+  window.__checkpoint('Loading MindAR...');
 </script>
 
-<!-- Three.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" onload="window.__checkpoint('Loading STL loader...')"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/loaders/STLLoader.js" onload="window.__checkpoint('Loading MindAR...')"></script>
-
-<!-- MindAR (image tracking + camera) -->
+<!-- MindAR (image tracking + camera) — bundles its own Three.js internally -->
 <script src="https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js" onload="window.__checkpoint('MindAR loaded, starting app...')" onerror="window.__checkpoint('Failed to load MindAR from unpkg')"></script>
 
 <!-- MediaPipe Hand Landmarker (hand tracking) -->
@@ -93,6 +89,27 @@ if (!window.MINDAR || !window.MINDAR.IMAGE) {
   statusEl.style.background = 'rgba(180,0,0,0.85)';
   statusEl.textContent = 'MindAR library did not load — check your internet connection or try a different network (WiFi vs mobile data).';
   throw new Error('MindAR not available');
+}
+
+// Use MindAR's own bundled Three.js instance for everything — loading a second,
+// separate copy of Three.js alongside MindAR's internal one can silently break it.
+const THREE = window.MINDAR.IMAGE.THREE;
+
+// STLLoader isn't bundled with MindAR, so load it and attach it to MindAR's THREE
+// instance specifically (rather than a possibly-different global THREE).
+async function loadSTLLoaderFor(threeInstance) {
+  const originalGlobalTHREE = window.THREE;
+  window.THREE = threeInstance; // STLLoader.js expects to attach to window.THREE
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/loaders/STLLoader.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Failed to load STLLoader'));
+    document.head.appendChild(s);
+  });
+  const STLLoader = threeInstance.STLLoader;
+  window.THREE = originalGlobalTHREE; // restore, don't leave a stray global behind
+  return STLLoader;
 }
 
 const mindarThree = new window.MINDAR.IMAGE.MindARThree({
@@ -125,42 +142,45 @@ anchor.onTargetLost = () => {
   statusEl.textContent = "Point your camera at the target image";
 };
 
-const loader = new THREE.STLLoader();
-loader.load(
-  MODEL_SRC,
-  (geometry) => {
-    // STL has no built-in color/texture — pick a flat material color here.
-    // (change 0x9fe1cb to whatever suits your object)
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x9fe1cb,
-      metalness: 0.1,
-      roughness: 0.6,
-    });
+// Model loading happens inside the async startup below, once STLLoader is ready.
+function loadModel(STLLoader) {
+  const loader = new STLLoader();
+  loader.load(
+    MODEL_SRC,
+    (geometry) => {
+      // STL has no built-in color/texture — pick a flat material color here.
+      // (change 0x9fe1cb to whatever suits your object)
+      const material = new THREE.MeshStandardMaterial({
+        color: 0x9fe1cb,
+        metalness: 0.1,
+        roughness: 0.6,
+      });
 
-    if (!geometry.attributes.normal) {
-      geometry.computeVertexNormals();
+      if (!geometry.attributes.normal) {
+        geometry.computeVertexNormals();
+      }
+      geometry.center(); // centers the mesh at the origin
+
+      const model = new THREE.Mesh(geometry, material);
+
+      // Normalize scale so any model size looks reasonable on the target
+      geometry.computeBoundingBox();
+      const size = new THREE.Vector3();
+      geometry.boundingBox.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z) || 1;
+      const scale = 0.5 / maxDim;
+      model.scale.setScalar(scale);
+      model.rotation.x = -Math.PI / 2; // STL is often Z-up; lay flat on the marker, adjust to taste
+
+      modelGroup.add(model);
+    },
+    undefined,
+    (err) => {
+      console.error('Model failed to load', err);
+      statusEl.textContent = "Couldn't load the 3D model — check assets/model.stl";
     }
-    geometry.center(); // centers the mesh at the origin
-
-    const model = new THREE.Mesh(geometry, material);
-
-    // Normalize scale so any model size looks reasonable on the target
-    geometry.computeBoundingBox();
-    const size = new THREE.Vector3();
-    geometry.boundingBox.getSize(size);
-    const maxDim = Math.max(size.x, size.y, size.z) || 1;
-    const scale = 0.5 / maxDim;
-    model.scale.setScalar(scale);
-    model.rotation.x = -Math.PI / 2; // STL is often Z-up; lay flat on the marker, adjust to taste
-
-    modelGroup.add(model);
-  },
-  undefined,
-  (err) => {
-    console.error('Model failed to load', err);
-    statusEl.textContent = "Couldn't load the 3D model — check assets/model.stl";
-  }
-);
+  );
+}
 
 // ---------------------------------------------------------------------
 // Hand tracking: reuse MindAR's own camera <video> element for MediaPipe,
@@ -211,7 +231,6 @@ function trackHands() {
 // ---------------------------------------------------------------------
 // Render loop
 // ---------------------------------------------------------------------
-const clock = new THREE.Clock();
 
 function animate() {
   renderer.setAnimationLoop(() => {
@@ -227,6 +246,10 @@ function animate() {
 
 (async () => {
   try {
+    statusEl.textContent = "Loading model loader...";
+    const STLLoader = await loadSTLLoaderFor(THREE);
+    loadModel(STLLoader);
+
     statusEl.textContent = "Starting camera...";
     await mindarThree.start();
     animate();
