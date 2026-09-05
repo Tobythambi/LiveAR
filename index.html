@@ -43,14 +43,18 @@
 
 <script>
   // Surface any JS error directly on screen, since there's no console on a phone.
+  // capture:true so this also catches <script src> resources that fail to load (404s etc).
   window.addEventListener('error', (e) => {
     const el = document.getElementById('status');
-    if (el) {
-      el.style.background = 'rgba(180,0,0,0.85)';
+    if (!el) return;
+    el.style.background = 'rgba(180,0,0,0.85)';
+    if (e.target && (e.target.tagName === 'SCRIPT')) {
+      el.textContent = 'Failed to load script: ' + e.target.src;
+    } else {
       el.textContent = 'Error: ' + (e.message || 'unknown') +
         (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '');
     }
-  });
+  }, true);
   window.addEventListener('unhandledrejection', (e) => {
     const el = document.getElementById('status');
     if (el) {
@@ -58,14 +62,21 @@
       el.textContent = 'Error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason);
     }
   });
+  window.__checkpoint = (msg) => {
+    const el = document.getElementById('status');
+    if (el && !el.textContent.startsWith('Error') && !el.textContent.startsWith('Failed')) {
+      el.textContent = msg;
+    }
+  };
+  window.__checkpoint('Loading Three.js...');
 </script>
 
 <!-- Three.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/loaders/STLLoader.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" onload="window.__checkpoint('Loading STL loader...')"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/loaders/STLLoader.js" onload="window.__checkpoint('Loading MindAR...')"></script>
 
 <!-- MindAR (image tracking + camera) -->
-<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js" onload="window.__checkpoint('MindAR loaded, starting app...')"></script>
 
 <!-- MediaPipe Hand Landmarker (hand tracking) -->
 <script type="module">
