@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>AR Hand-Controlled Model</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #000;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  #container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+  }
+  /* MediaPipe reads frames from this hidden video; MindAR's own camera video
+     stays as the visible background feed, so we don't request getUserMedia twice. */
+  #status {
+    position: absolute;
+    top: env(safe-area-inset-top, 12px);
+    left: 12px;
+    right: 12px;
+    z-index: 10;
+    color: #fff;
+    font-size: 13px;
+    background: rgba(0,0,0,0.55);
+    padding: 8px 12px;
+    border-radius: 8px;
+    text-align: center;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="container">
+  <div id="status">Point your camera at the target image</div>
+</div>
+
+<!-- Three.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/loaders/STLLoader.js"></script>
+
+<!-- MindAR (image tracking + camera) -->
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+
+<!-- MediaPipe Hand Landmarker (hand tracking) -->
+<script type="module">
+import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const statusEl = document.getElementById('status');
+
+// ---- CONFIG ----
+// Replace with your compiled .mind target file and your 3D model.
+const TARGET_SRC = './assets/target.mind';
+const MODEL_SRC = './assets/model.stl';
+
+const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+  container: document.querySelector("#container"),
+  imageTargetSrc: TARGET_SRC,
+});
+
+const { renderer, scene, camera } = mindarThree;
+
+const light1 = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
+scene.add(light1);
+const light2 = new THREE.DirectionalLight(0xffffff, 0.8);
+light2.position.set(1, 2, 2);
+scene.add(light2);
+
+// Anchor tied to the recognized target
+const anchor = mindarThree.addAnchor(0);
+
+// Group we actually rotate with hand input, nested inside the anchor
+const modelGroup = new THREE.Group();
+anchor.group.add(modelGroup);
+
+let targetFound = false;
+anchor.onTargetFound = () => {
+  targetFound = true;
+  statusEl.textContent = "Model locked — move your hand to rotate it";
+};
+anchor.onTargetLost = () => {
+  targetFound = false;
+  statusEl.textContent = "Point your camera at the target image";
+};
+
+const loader = new THREE.STLLoader();
+loader.load(
+  MODEL_SRC,
+  (geometry) => {
+    // STL has no built-in color/texture — pick a flat material color here.
+    // (change 0x9fe1cb to whatever suits your object)
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x9fe1cb,
+      metalness: 0.1,
+      roughness: 0.6,
+    });
+
+    if (!geometry.attributes.normal) {
+      geometry.computeVertexNormals();
+    }
+    geometry.center(); // centers the mesh at the origin
+
+    const model = new THREE.Mesh(geometry, material);
+
+    // Normalize scale so any model size looks reasonable on the target
+    geometry.computeBoundingBox();
+    const size = new THREE.Vector3();
+    geometry.boundingBox.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const scale = 0.5 / maxDim;
+    model.scale.setScalar(scale);
+    model.rotation.x = -Math.PI / 2; // STL is often Z-up; lay flat on the marker, adjust to taste
+
+    modelGroup.add(model);
+  },
+  undefined,
+  (err) => {
+    console.error('Model failed to load', err);
+    statusEl.textContent = "Couldn't load the 3D model — check assets/model.stl";
+  }
+);
+
+// ---------------------------------------------------------------------
+// Hand tracking: reuse MindAR's own camera <video> element for MediaPipe,
+// so we never call getUserMedia a second time.
+// ---------------------------------------------------------------------
+let handLandmarker = null;
+let lastVideoTime = -1;
+
+let targetRotY = 0;
+let targetRotX = 0;
+let curRotY = 0;
+let curRotX = 0;
+
+async function initHandTracking() {
+  const fileset = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  handLandmarker = await HandLandmarker.createFromOptions(fileset, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+    },
+    runningMode: "VIDEO",
+    numHands: 1,
+  });
+}
+
+function findMindARVideo() {
+  // MindAR injects its own <video> into the container as the camera feed
+  return document.querySelector('#container video');
+}
+
+function trackHands() {
+  const video = findMindARVideo();
+  if (video && handLandmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    const result = handLandmarker.detectForVideo(video, performance.now());
+    if (result.landmarks && result.landmarks.length > 0) {
+      const wrist = result.landmarks[0][0]; // 0 = wrist landmark
+      // Map horizontal hand position to Y rotation, vertical to X rotation
+      targetRotY = (0.5 - wrist.x) * 6;
+      targetRotX = (wrist.y - 0.5) * 3;
+    }
+  }
+  requestAnimationFrame(trackHands);
+}
+
+// ---------------------------------------------------------------------
+// Render loop
+// ---------------------------------------------------------------------
+const clock = new THREE.Clock();
+
+function animate() {
+  renderer.setAnimationLoop(() => {
+    if (targetFound) {
+      curRotY += (targetRotY - curRotY) * 0.12;
+      curRotX += (targetRotX - curRotX) * 0.12;
+      modelGroup.rotation.y = curRotY;
+      modelGroup.rotation.x = curRotX;
+    }
+    renderer.render(scene, camera);
+  });
+}
+
+(async () => {
+  await mindarThree.start();
+  animate();
+  await initHandTracking();
+  trackHands();
+})();
+</script>
+</body>
+</html>
