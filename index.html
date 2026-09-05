@@ -4,6 +4,15 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>AR Hand-Controlled Model</title>
+<!-- MindAR's ES module build imports Three.js as a bare specifier ("three"),
+     which browsers can only resolve via an import map like this. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.136.0/build/three.module.js"
+  }
+}
+</script>
 <style>
   html, body {
     margin: 0;
@@ -76,6 +85,8 @@
 <!-- MediaPipe Hand Landmarker (hand tracking) -->
 <script type="module">
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+import * as THREE from 'three';
+import { STLLoader } from 'https://unpkg.com/three@0.136.0/examples/jsm/loaders/STLLoader.js';
 
 const statusEl = document.getElementById('status');
 
@@ -84,57 +95,19 @@ const statusEl = document.getElementById('status');
 const TARGET_SRC = './assets/target.mind';
 const MODEL_SRC = './assets/model.stl';
 
-let MindARImageModule = null;
-
-async function loadMindAR() {
-  const url = 'https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js';
-  statusEl.textContent = 'Importing MindAR module...';
-  const mod = await import(/* @vite-ignore */ url);
-  const keys = Object.keys(mod).join(', ');
-  statusEl.textContent = 'MindAR module loaded. Exports: ' + (keys || '(none)');
-  await new Promise((r) => setTimeout(r, 600)); // let the export list be visible briefly
-  MindARImageModule = mod;
-  if (!mod || (!mod.MindARThree && !(mod.default && mod.default.MindARThree))) {
-    throw new Error('Module loaded but no MindARThree export found. Keys: ' + keys);
-  }
-}
+let MindARThree;
 
 try {
-  await loadMindAR();
+  statusEl.textContent = 'Importing MindAR module...';
+  const mod = await import(/* @vite-ignore */ 'https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js');
+  MindARThree = mod.MindARThree || (mod.default && mod.default.MindARThree);
+  if (!MindARThree) {
+    throw new Error('No MindARThree export found. Keys: ' + Object.keys(mod).join(', '));
+  }
 } catch (err) {
   statusEl.style.background = 'rgba(180,0,0,0.85)';
   statusEl.textContent = 'MindAR load failed: ' + (err && err.message ? err.message : err);
   throw err;
-}
-
-const MindARThree = MindARImageModule.MindARThree || MindARImageModule.default.MindARThree;
-const THREE_FROM_MODULE = MindARImageModule.THREE || (MindARImageModule.default && MindARImageModule.default.THREE);
-
-if (!THREE_FROM_MODULE) {
-  statusEl.style.background = 'rgba(180,0,0,0.85)';
-  statusEl.textContent = 'MindAR module loaded but has no THREE export — check console/exports list above.';
-  throw new Error('No THREE export from MindAR module');
-}
-
-// Use MindAR's own bundled Three.js instance for everything — loading a second,
-// separate copy of Three.js alongside MindAR's internal one can silently break it.
-const THREE = THREE_FROM_MODULE;
-
-// STLLoader isn't bundled with MindAR, so load it and attach it to MindAR's THREE
-// instance specifically (rather than a possibly-different global THREE).
-async function loadSTLLoaderFor(threeInstance) {
-  const originalGlobalTHREE = window.THREE;
-  window.THREE = threeInstance; // STLLoader.js expects to attach to window.THREE
-  await new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/loaders/STLLoader.js';
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('Failed to load STLLoader'));
-    document.head.appendChild(s);
-  });
-  const STLLoader = threeInstance.STLLoader;
-  window.THREE = originalGlobalTHREE; // restore, don't leave a stray global behind
-  return STLLoader;
 }
 
 const mindarThree = new MindARThree({
@@ -167,8 +140,8 @@ anchor.onTargetLost = () => {
   statusEl.textContent = "Point your camera at the target image";
 };
 
-// Model loading happens inside the async startup below, once STLLoader is ready.
-function loadModel(STLLoader) {
+// Model loading happens inside the async startup below.
+function loadModel() {
   const loader = new STLLoader();
   loader.load(
     MODEL_SRC,
@@ -271,9 +244,7 @@ function animate() {
 
 (async () => {
   try {
-    statusEl.textContent = "Loading model loader...";
-    const STLLoader = await loadSTLLoaderFor(THREE);
-    loadModel(STLLoader);
+    loadModel();
 
     statusEl.textContent = "Starting camera...";
     await mindarThree.start();
