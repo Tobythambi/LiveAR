@@ -84,17 +84,18 @@ const statusEl = document.getElementById('status');
 const TARGET_SRC = './assets/target.mind';
 const MODEL_SRC = './assets/model.stl';
 
+let MindARImageModule = null;
+
 async function loadMindAR() {
   const url = 'https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js';
-  statusEl.textContent = 'Fetching MindAR script...';
-  const res = await fetch(url);
-  const text = await res.text();
-  statusEl.textContent = 'Got ' + text.length + ' bytes (status ' + res.status + '), running it...';
-  await new Promise((r) => setTimeout(r, 300)); // let the byte count be visible briefly
-  // eslint-disable-next-line no-eval
-  (0, eval)(text);
-  if (!window.MINDAR || !window.MINDAR.IMAGE) {
-    throw new Error('Script ran (' + text.length + ' bytes) but window.MINDAR is still missing');
+  statusEl.textContent = 'Importing MindAR module...';
+  const mod = await import(/* @vite-ignore */ url);
+  const keys = Object.keys(mod).join(', ');
+  statusEl.textContent = 'MindAR module loaded. Exports: ' + (keys || '(none)');
+  await new Promise((r) => setTimeout(r, 600)); // let the export list be visible briefly
+  MindARImageModule = mod;
+  if (!mod || (!mod.MindARThree && !(mod.default && mod.default.MindARThree))) {
+    throw new Error('Module loaded but no MindARThree export found. Keys: ' + keys);
   }
 }
 
@@ -106,9 +107,18 @@ try {
   throw err;
 }
 
+const MindARThree = MindARImageModule.MindARThree || MindARImageModule.default.MindARThree;
+const THREE_FROM_MODULE = MindARImageModule.THREE || (MindARImageModule.default && MindARImageModule.default.THREE);
+
+if (!THREE_FROM_MODULE) {
+  statusEl.style.background = 'rgba(180,0,0,0.85)';
+  statusEl.textContent = 'MindAR module loaded but has no THREE export — check console/exports list above.';
+  throw new Error('No THREE export from MindAR module');
+}
+
 // Use MindAR's own bundled Three.js instance for everything — loading a second,
 // separate copy of Three.js alongside MindAR's internal one can silently break it.
-const THREE = window.MINDAR.IMAGE.THREE;
+const THREE = THREE_FROM_MODULE;
 
 // STLLoader isn't bundled with MindAR, so load it and attach it to MindAR's THREE
 // instance specifically (rather than a possibly-different global THREE).
@@ -127,7 +137,7 @@ async function loadSTLLoaderFor(threeInstance) {
   return STLLoader;
 }
 
-const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+const mindarThree = new MindARThree({
   container: document.querySelector("#container"),
   imageTargetSrc: TARGET_SRC,
 });
