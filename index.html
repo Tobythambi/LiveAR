@@ -48,6 +48,40 @@
     height: 100% !important;
     z-index: 1 !important;
   }
+  /* Our own overlay canvas for drawing the hand skeleton, above MindAR's canvas */
+  #hand-overlay {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 5 !important;
+    pointer-events: none;
+  }
+  #hand-hint {
+    position: absolute;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    color: #fff;
+    font-size: 13px;
+    background: rgba(0,0,0,0.5);
+    padding: 10px 16px;
+    border-radius: 12px;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+  #hand-hint.hidden {
+    opacity: 0;
+  }
+  #hand-hint svg {
+    opacity: 0.9;
+  }
   #status {
     position: absolute;
     top: env(safe-area-inset-top, 12px);
@@ -68,6 +102,20 @@
 
 <div id="container">
   <div id="status">Point your camera at the target image</div>
+  <canvas id="hand-overlay"></canvas>
+  <div id="hand-hint">
+    <svg width="52" height="52" viewBox="0 0 48 48" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 33V15.5a2.6 2.6 0 0 1 5.2 0V26" fill="rgba(255,255,255,0.10)"/>
+      <path d="M17.2 25V11.5a2.6 2.6 0 0 1 5.2 0V25" fill="rgba(255,255,255,0.10)"/>
+      <path d="M22.4 25V10.5a2.6 2.6 0 0 1 5.2 0V25" fill="rgba(255,255,255,0.10)"/>
+      <path d="M27.6 25V13a2.6 2.6 0 0 1 5.2 0v14" fill="rgba(255,255,255,0.10)"/>
+      <path d="M12 26.5c0-2.4-1.6-4.2-3.6-4.2S5 23.7 5 25.6c0 1 .3 1.9.9 2.7l4.3 6" fill="rgba(255,255,255,0.10)"/>
+      <path d="M10.2 34.3c1.9 5.2 6.6 8.7 12 8.7 7 0 10.6-4.6 10.6-11V27" fill="rgba(255,255,255,0.10)"/>
+      <path d="M36 14.5a10 10 0 0 1 5.6 5.4" opacity="0.75"/>
+      <path d="M41.8 15.2l.2 5-5-.6" opacity="0.75"/>
+    </svg>
+    <span>Hold your hand up to rotate the model</span>
+  </div>
 </div>
 
 <script>
@@ -231,16 +279,100 @@ function findMindARVideo() {
   return document.querySelector('#container video');
 }
 
+// ---------------------------------------------------------------------
+// Hand skeleton overlay
+// ---------------------------------------------------------------------
+const overlayCanvas = document.getElementById('hand-overlay');
+const overlayCtx = overlayCanvas.getContext('2d');
+const handHint = document.getElementById('hand-hint');
+
+function resizeOverlay() {
+  const rect = overlayCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  if (overlayCanvas.width !== rect.width * dpr || overlayCanvas.height !== rect.height * dpr) {
+    overlayCanvas.width = rect.width * dpr;
+    overlayCanvas.height = rect.height * dpr;
+  }
+}
+
+function drawHand(landmarks) {
+  resizeOverlay();
+  const w = overlayCanvas.width;
+  const h = overlayCanvas.height;
+  overlayCtx.clearRect(0, 0, w, h);
+
+  if (!landmarks) return;
+
+  const px = (i) => landmarks[i].x * w;
+  const py = (i) => landmarks[i].y * h;
+  const unit = Math.min(w, h);
+
+  overlayCtx.lineCap = 'round';
+  overlayCtx.lineJoin = 'round';
+
+  // Filled palm so the overlay reads as a hand, not a wireframe
+  const palm = [0, 1, 5, 9, 13, 17];
+  overlayCtx.beginPath();
+  overlayCtx.moveTo(px(palm[0]), py(palm[0]));
+  for (let i = 1; i < palm.length; i++) {
+    overlayCtx.lineTo(px(palm[i]), py(palm[i]));
+  }
+  overlayCtx.closePath();
+  overlayCtx.fillStyle = 'rgba(159, 225, 203, 0.28)';
+  overlayCtx.fill();
+  overlayCtx.strokeStyle = 'rgba(159, 225, 203, 0.9)';
+  overlayCtx.lineWidth = unit * 0.012;
+  overlayCtx.stroke();
+
+  // Fingers as thick strokes that taper toward the tips
+  const fingers = [
+    [1, 2, 3, 4],      // thumb
+    [5, 6, 7, 8],      // index
+    [9, 10, 11, 12],   // middle
+    [13, 14, 15, 16],  // ring
+    [17, 18, 19, 20],  // pinky
+  ];
+  overlayCtx.strokeStyle = 'rgba(159, 225, 203, 0.92)';
+  for (const finger of fingers) {
+    for (let i = 0; i < finger.length - 1; i++) {
+      // Segments get thinner the closer they are to the fingertip
+      const taper = 1 - (i / (finger.length - 1)) * 0.45;
+      overlayCtx.lineWidth = unit * 0.026 * taper;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(px(finger[i]), py(finger[i]));
+      overlayCtx.lineTo(px(finger[i + 1]), py(finger[i + 1]));
+      overlayCtx.stroke();
+    }
+  }
+
+  // Fingertips highlighted, other joints smaller
+  const tips = [4, 8, 12, 16, 20];
+  for (let i = 0; i < landmarks.length; i++) {
+    const isTip = tips.includes(i);
+    overlayCtx.beginPath();
+    overlayCtx.arc(px(i), py(i), unit * (isTip ? 0.013 : 0.008), 0, Math.PI * 2);
+    overlayCtx.fillStyle = isTip ? '#ffffff' : 'rgba(255,255,255,0.75)';
+    overlayCtx.fill();
+  }
+}
+
 function trackHands() {
   const video = findMindARVideo();
   if (video && handLandmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const result = handLandmarker.detectForVideo(video, performance.now());
     if (result.landmarks && result.landmarks.length > 0) {
-      const wrist = result.landmarks[0][0]; // 0 = wrist landmark
+      const landmarks = result.landmarks[0];
+      const wrist = landmarks[0]; // 0 = wrist landmark
       // Map horizontal hand position to Y rotation, vertical to X rotation
       targetRotY = (0.5 - wrist.x) * 6;
       targetRotX = (wrist.y - 0.5) * 3;
+
+      drawHand(landmarks);
+      handHint.classList.add('hidden');
+    } else {
+      drawHand(null);
+      handHint.classList.remove('hidden');
     }
   }
   requestAnimationFrame(trackHands);
