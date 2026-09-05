@@ -71,8 +71,7 @@
   window.__checkpoint('Loading MindAR...');
 </script>
 
-<!-- MindAR (image tracking + camera) — bundles its own Three.js internally -->
-<script src="https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js" onload="window.__checkpoint('MindAR loaded, starting app...')" onerror="window.__checkpoint('Failed to load MindAR from unpkg')"></script>
+<!-- MediaPipe Hand Landmarker (hand tracking) + MindAR loaded via fetch/eval below -->
 
 <!-- MediaPipe Hand Landmarker (hand tracking) -->
 <script type="module">
@@ -85,10 +84,26 @@ const statusEl = document.getElementById('status');
 const TARGET_SRC = './assets/target.mind';
 const MODEL_SRC = './assets/model.stl';
 
-if (!window.MINDAR || !window.MINDAR.IMAGE) {
+async function loadMindAR() {
+  const url = 'https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js';
+  statusEl.textContent = 'Fetching MindAR script...';
+  const res = await fetch(url);
+  const text = await res.text();
+  statusEl.textContent = 'Got ' + text.length + ' bytes (status ' + res.status + '), running it...';
+  await new Promise((r) => setTimeout(r, 300)); // let the byte count be visible briefly
+  // eslint-disable-next-line no-eval
+  (0, eval)(text);
+  if (!window.MINDAR || !window.MINDAR.IMAGE) {
+    throw new Error('Script ran (' + text.length + ' bytes) but window.MINDAR is still missing');
+  }
+}
+
+try {
+  await loadMindAR();
+} catch (err) {
   statusEl.style.background = 'rgba(180,0,0,0.85)';
-  statusEl.textContent = 'MindAR library did not load — check your internet connection or try a different network (WiFi vs mobile data).';
-  throw new Error('MindAR not available');
+  statusEl.textContent = 'MindAR load failed: ' + (err && err.message ? err.message : err);
+  throw err;
 }
 
 // Use MindAR's own bundled Three.js instance for everything — loading a second,
