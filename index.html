@@ -60,7 +60,7 @@
   }
   #hand-hint {
     position: absolute;
-    bottom: 32px;
+    bottom: 150px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 6;
@@ -81,6 +81,37 @@
   }
   #hand-hint svg {
     opacity: 0.9;
+  }
+  /* The grab target: touch it with your fingertip to lock/unlock rotation */
+  #grab-zone {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 7;
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.25;
+    color: #fff;
+    background: rgba(226, 75, 74, 0.32);
+    border: 3px solid #E24B4A;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease, background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  }
+  #grab-zone.visible {
+    opacity: 1;
+  }
+  #grab-zone.grabbed {
+    background: rgba(29, 158, 117, 0.32);
+    border-color: #1D9E75;
+    transform: translateX(-50%) scale(1.08);
   }
   #status {
     position: absolute;
@@ -114,8 +145,9 @@
       <path d="M36 14.5a10 10 0 0 1 5.6 5.4" opacity="0.75"/>
       <path d="M41.8 15.2l.2 5-5-.6" opacity="0.75"/>
     </svg>
-    <span>Hold your hand up to rotate the model</span>
+    <span>Touch the circle with your finger</span>
   </div>
+  <div id="grab-zone"><span id="grab-label">Grab</span></div>
 </div>
 
 <script>
@@ -199,12 +231,29 @@ const modelGroup = new THREE.Group();
 anchor.group.add(modelGroup);
 
 let targetFound = false;
+const grabZone = document.getElementById('grab-zone');
+const grabLabel = document.getElementById('grab-label');
+
+// Grab state: touching the circle toggles rotation control on/off
+let isGrabbed = false;
+let wasInsideZone = false;
+// Hand position at the moment of grabbing, plus the model rotation at that moment,
+// so rotation is relative to where you grabbed rather than jumping.
+let grabOriginX = 0;
+let grabOriginY = 0;
+let grabBaseRotY = 0;
+let grabBaseRotX = 0;
+
 anchor.onTargetFound = () => {
   targetFound = true;
-  statusEl.textContent = "Model locked — move your hand to rotate it";
+  statusEl.textContent = "Touch the red circle to grab the model";
 };
 anchor.onTargetLost = () => {
   targetFound = false;
+  isGrabbed = false;
+  wasInsideZone = false;
+  grabZone.classList.remove('grabbed', 'visible');
+  grabLabel.textContent = 'Grab';
   statusEl.textContent = "Point your camera at the target image";
 };
 
@@ -286,6 +335,22 @@ const overlayCanvas = document.getElementById('hand-overlay');
 const overlayCtx = overlayCanvas.getContext('2d');
 const handHint = document.getElementById('hand-hint');
 
+function isFingertipInZone(landmarks) {
+  const zoneRect = grabZone.getBoundingClientRect();
+  const containerRect = overlayCanvas.getBoundingClientRect();
+  // Index fingertip (8) is the pointer; fall back to wrist if missing
+  const tip = landmarks[8] || landmarks[0];
+  const tipX = containerRect.left + tip.x * containerRect.width;
+  const tipY = containerRect.top + tip.y * containerRect.height;
+
+  const cx = zoneRect.left + zoneRect.width / 2;
+  const cy = zoneRect.top + zoneRect.height / 2;
+  const radius = zoneRect.width / 2;
+  const dx = tipX - cx;
+  const dy = tipY - cy;
+  return (dx * dx + dy * dy) <= radius * radius;
+}
+
 function resizeOverlay() {
   const rect = overlayCanvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
@@ -361,18 +426,43 @@ function trackHands() {
   if (video && handLandmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const result = handLandmarker.detectForVideo(video, performance.now());
+
+    // The grab circle only matters once the model is actually on the target
+    grabZone.classList.toggle('visible', targetFound);
+
     if (result.landmarks && result.landmarks.length > 0) {
       const landmarks = result.landmarks[0];
-      const wrist = landmarks[0]; // 0 = wrist landmark
-      // Map horizontal hand position to Y rotation, vertical to X rotation
-      targetRotY = (0.5 - wrist.x) * 6;
-      targetRotX = (wrist.y - 0.5) * 3;
+      const wrist = landmarks[0];
+
+      if (targetFound) {
+        const inside = isFingertipInZone(landmarks);
+        // Toggle on the moment the finger enters, not every frame it stays inside
+        if (inside && !wasInsideZone) {
+          isGrabbed = !isGrabbed;
+          if (isGrabbed) {
+            grabOriginX = wrist.x;
+            grabOriginY = wrist.y;
+            grabBaseRotY = targetRotY;
+            grabBaseRotX = targetRotX;
+          }
+          grabZone.classList.toggle('grabbed', isGrabbed);
+          grabLabel.textContent = isGrabbed ? 'Release' : 'Grab';
+        }
+        wasInsideZone = inside;
+
+        if (isGrabbed) {
+          // Full 360°+ of yaw across the width of the frame, relative to grab point
+          targetRotY = grabBaseRotY + (grabOriginX - wrist.x) * Math.PI * 2.2;
+          targetRotX = grabBaseRotX + (wrist.y - grabOriginY) * Math.PI * 1.1;
+        }
+      }
 
       drawHand(landmarks);
-      handHint.classList.add('hidden');
+      handHint.classList.toggle('hidden', isGrabbed || !targetFound);
     } else {
+      wasInsideZone = false;
       drawHand(null);
-      handHint.classList.remove('hidden');
+      handHint.classList.toggle('hidden', !targetFound);
     }
   }
   requestAnimationFrame(trackHands);
