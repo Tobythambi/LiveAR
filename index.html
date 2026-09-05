@@ -202,6 +202,14 @@ try {
 const mindarThree = new MindARThree({
   container: document.querySelector("#container"),
   imageTargetSrc: TARGET_SRC,
+  // Smoothing: lower filterMinCF and filterBeta trade a little responsiveness
+  // for a much steadier model. Raise filterMinCF if it starts to feel laggy.
+  filterMinCF: 0.0001,
+  filterBeta: 0.001,
+  // Tolerate brief detection dropouts instead of snapping the model away
+  missTolerance: 10,
+  warmupTolerance: 3,
+  maxTrack: 1,
 });
 
 const { renderer, scene, camera } = mindarThree;
@@ -214,8 +222,14 @@ scene.add(light2);
 
 const anchor = mindarThree.addAnchor(0);
 
+// MindAR writes its raw tracked pose onto anchor.group. We keep the model in a
+// separate scene-level group and ease it toward that pose each frame, which
+// smooths out residual jitter that the built-in filters leave behind.
+const smoothGroup = new THREE.Group();
+scene.add(smoothGroup);
+
 const modelGroup = new THREE.Group();
-anchor.group.add(modelGroup);
+smoothGroup.add(modelGroup);
 
 // ---------------------------------------------------------------------
 // Rotation state — driven by dragging the circle button
@@ -395,7 +409,38 @@ function loadModel() {
 // Render loop
 // ---------------------------------------------------------------------
 function animate() {
+  const smoothPos = new THREE.Vector3();
+  const smoothQuat = new THREE.Quaternion();
+  let posInitialised = false;
+
   renderer.setAnimationLoop(() => {
+    // Follow the tracked pose, but ease into it so small tracking wobbles
+    // don't reach the model. Lower = steadier, higher = more responsive.
+    const FOLLOW = 0.18;
+
+    smoothGroup.visible = anchor.group.visible;
+
+    if (anchor.group.visible) {
+      const targetPos = anchor.group.position;
+      const targetQuat = anchor.group.quaternion;
+
+      if (!posInitialised) {
+        // Snap on the first frame so the model doesn't fly in from the origin
+        smoothPos.copy(targetPos);
+        smoothQuat.copy(targetQuat);
+        posInitialised = true;
+      } else {
+        smoothPos.lerp(targetPos, FOLLOW);
+        smoothQuat.slerp(targetQuat, FOLLOW);
+      }
+
+      smoothGroup.position.copy(smoothPos);
+      smoothGroup.quaternion.copy(smoothQuat);
+      smoothGroup.scale.copy(anchor.group.scale);
+    } else {
+      posInitialised = false;
+    }
+
     // Ease toward the target rotation and scale so gestures feel smooth
     curRotY += (targetRotY - curRotY) * 0.15;
     curRotX += (targetRotX - curRotX) * 0.15;
