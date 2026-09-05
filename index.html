@@ -81,26 +81,37 @@
     font-size: 12px;
     line-height: 1.2;
     color: #fff;
-    background: rgba(226, 75, 74, 0.4);
-    border: 3px solid #E24B4A;
+    background: rgba(29, 158, 117, 0.45);
+    border: 3px solid #1D9E75;
     pointer-events: auto;
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
     opacity: 0;
-    transition: opacity 0.3s ease, background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+    transition: opacity 0.3s ease, background 0.2s ease, transform 0.15s ease;
   }
   #grab-zone.visible {
     opacity: 1;
+    animation: grab-pulse 2s ease-out infinite;
   }
+  /* While dragging, stop the pulse and brighten — the user has already found it */
   #grab-zone.grabbed {
-    background: rgba(29, 158, 117, 0.45);
-    border-color: #1D9E75;
-    transform: translateX(-50%) scale(1.1);
+    animation: none;
+    background: rgba(29, 158, 117, 0.7);
+    box-shadow: 0 0 0 6px rgba(29, 158, 117, 0.25);
+    transform: translateX(-50%) scale(1.08);
+  }
+  @keyframes grab-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(29, 158, 117, 0.65); }
+    70%  { box-shadow: 0 0 0 22px rgba(29, 158, 117, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(29, 158, 117, 0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #grab-zone.visible { animation: none; }
   }
   #grab-zone svg {
-    opacity: 0.9;
+    opacity: 0.95;
   }
   #reset-btn {
     position: absolute;
