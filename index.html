@@ -41,6 +41,25 @@
   <div id="status">Point your camera at the target image</div>
 </div>
 
+<script>
+  // Surface any JS error directly on screen, since there's no console on a phone.
+  window.addEventListener('error', (e) => {
+    const el = document.getElementById('status');
+    if (el) {
+      el.style.background = 'rgba(180,0,0,0.85)';
+      el.textContent = 'Error: ' + (e.message || 'unknown') +
+        (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '');
+    }
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const el = document.getElementById('status');
+    if (el) {
+      el.style.background = 'rgba(180,0,0,0.85)';
+      el.textContent = 'Error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason);
+    }
+  });
+</script>
+
 <!-- Three.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/loaders/STLLoader.js"></script>
@@ -190,10 +209,18 @@ function animate() {
 }
 
 (async () => {
-  await mindarThree.start();
-  animate();
-  await initHandTracking();
-  trackHands();
+  try {
+    statusEl.textContent = "Starting camera...";
+    await mindarThree.start();
+    animate();
+    statusEl.textContent = "Point your camera at the target image";
+    await initHandTracking();
+    trackHands();
+  } catch (err) {
+    console.error(err);
+    statusEl.style.background = 'rgba(180,0,0,0.85)';
+    statusEl.textContent = "Startup error: " + (err && err.message ? err.message : err);
+  }
 })();
 </script>
 </body>
