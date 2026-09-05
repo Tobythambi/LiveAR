@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>AR Hand-Controlled Model</title>
+<title>AR Model Viewer</title>
 <!-- MindAR's ES module build imports Three.js with bare specifiers
      ("three" and "three/addons/..."), which browsers only resolve via an import map. -->
 <script type="importmap">
@@ -48,71 +48,6 @@
     height: 100% !important;
     z-index: 1 !important;
   }
-  /* Our own overlay canvas for drawing the hand skeleton, above MindAR's canvas */
-  #hand-overlay {
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    z-index: 5 !important;
-    pointer-events: none;
-  }
-  #hand-hint {
-    position: absolute;
-    bottom: 150px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 6;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    color: #fff;
-    font-size: 13px;
-    background: rgba(0,0,0,0.5);
-    padding: 10px 16px;
-    border-radius: 12px;
-    pointer-events: none;
-    transition: opacity 0.4s ease;
-  }
-  #hand-hint.hidden {
-    opacity: 0;
-  }
-  #hand-hint svg {
-    opacity: 0.9;
-  }
-  /* The grab target: touch it with your fingertip to lock/unlock rotation */
-  #grab-zone {
-    position: absolute;
-    bottom: 40px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 7;
-    width: 96px;
-    height: 96px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    font-size: 12px;
-    line-height: 1.25;
-    color: #fff;
-    background: rgba(226, 75, 74, 0.32);
-    border: 3px solid #E24B4A;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.3s ease, background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
-  }
-  #grab-zone.visible {
-    opacity: 1;
-  }
-  #grab-zone.grabbed {
-    background: rgba(29, 158, 117, 0.32);
-    border-color: #1D9E75;
-    transform: translateX(-50%) scale(1.08);
-  }
   #status {
     position: absolute;
     top: env(safe-area-inset-top, 12px);
@@ -127,32 +62,83 @@
     text-align: center;
     pointer-events: none;
   }
+  /* Drag anywhere on this circle to rotate the model */
+  #grab-zone {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 7;
+    width: 104px;
+    height: 104px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.2;
+    color: #fff;
+    background: rgba(226, 75, 74, 0.4);
+    border: 3px solid #E24B4A;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    opacity: 0;
+    transition: opacity 0.3s ease, background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+  }
+  #grab-zone.visible {
+    opacity: 1;
+  }
+  #grab-zone.grabbed {
+    background: rgba(29, 158, 117, 0.45);
+    border-color: #1D9E75;
+    transform: translateX(-50%) scale(1.1);
+  }
+  #grab-zone svg {
+    opacity: 0.9;
+  }
+  #reset-btn {
+    position: absolute;
+    bottom: 62px;
+    right: 24px;
+    z-index: 7;
+    padding: 9px 14px;
+    font-size: 12px;
+    color: #fff;
+    background: rgba(0,0,0,0.45);
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 999px;
+    pointer-events: auto;
+    -webkit-tap-highlight-color: transparent;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  #reset-btn.visible {
+    opacity: 1;
+  }
 </style>
 </head>
 <body>
 
 <div id="container">
   <div id="status">Point your camera at the target image</div>
-  <canvas id="hand-overlay"></canvas>
-  <div id="hand-hint">
-    <svg width="52" height="52" viewBox="0 0 48 48" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 33V15.5a2.6 2.6 0 0 1 5.2 0V26" fill="rgba(255,255,255,0.10)"/>
-      <path d="M17.2 25V11.5a2.6 2.6 0 0 1 5.2 0V25" fill="rgba(255,255,255,0.10)"/>
-      <path d="M22.4 25V10.5a2.6 2.6 0 0 1 5.2 0V25" fill="rgba(255,255,255,0.10)"/>
-      <path d="M27.6 25V13a2.6 2.6 0 0 1 5.2 0v14" fill="rgba(255,255,255,0.10)"/>
-      <path d="M12 26.5c0-2.4-1.6-4.2-3.6-4.2S5 23.7 5 25.6c0 1 .3 1.9.9 2.7l4.3 6" fill="rgba(255,255,255,0.10)"/>
-      <path d="M10.2 34.3c1.9 5.2 6.6 8.7 12 8.7 7 0 10.6-4.6 10.6-11V27" fill="rgba(255,255,255,0.10)"/>
-      <path d="M36 14.5a10 10 0 0 1 5.6 5.4" opacity="0.75"/>
-      <path d="M41.8 15.2l.2 5-5-.6" opacity="0.75"/>
+  <div id="grab-zone">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/>
+      <path d="M20.6 4.5v5h-5"/>
     </svg>
-    <span>Touch the circle with your finger</span>
+    <span id="grab-label">Drag</span>
   </div>
-  <div id="grab-zone"><span id="grab-label">Grab</span></div>
+  <button id="reset-btn" type="button">Reset</button>
 </div>
 
 <script>
   // Surface any JS error directly on screen, since there's no console on a phone.
-  // capture:true so this also catches <script src> resources that fail to load (404s etc).
   window.addEventListener('error', (e) => {
     const el = document.getElementById('status');
     if (!el) return;
@@ -171,42 +157,33 @@
       el.textContent = 'Error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason);
     }
   });
-  window.__checkpoint = (msg) => {
-    const el = document.getElementById('status');
-    if (el && !el.textContent.startsWith('Error') && !el.textContent.startsWith('Failed')) {
-      el.textContent = msg;
-    }
-  };
-  window.__checkpoint('Loading MindAR...');
 </script>
 
-<!-- MediaPipe Hand Landmarker (hand tracking) + MindAR loaded via fetch/eval below -->
-
-<!-- MediaPipe Hand Landmarker (hand tracking) -->
 <script type="module">
-import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
 const statusEl = document.getElementById('status');
+const grabZone = document.getElementById('grab-zone');
+const grabLabel = document.getElementById('grab-label');
+const resetBtn = document.getElementById('reset-btn');
 
 // ---- CONFIG ----
-// Replace with your compiled .mind target file and your 3D model.
 const TARGET_SRC = './assets/target.mind';
 const MODEL_SRC = './assets/model.stl';
 
 let MindARThree;
 
 try {
-  statusEl.textContent = 'Importing MindAR module...';
-  const mod = await import(/* @vite-ignore */ 'https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js');
+  statusEl.textContent = 'Loading AR engine...';
+  const mod = await import('https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js');
   MindARThree = mod.MindARThree || (mod.default && mod.default.MindARThree);
   if (!MindARThree) {
     throw new Error('No MindARThree export found. Keys: ' + Object.keys(mod).join(', '));
   }
 } catch (err) {
   statusEl.style.background = 'rgba(180,0,0,0.85)';
-  statusEl.textContent = 'MindAR load failed: ' + (err && err.message ? err.message : err);
+  statusEl.textContent = 'AR engine failed to load: ' + (err && err.message ? err.message : err);
   throw err;
 }
 
@@ -223,48 +200,96 @@ const light2 = new THREE.DirectionalLight(0xffffff, 0.8);
 light2.position.set(1, 2, 2);
 scene.add(light2);
 
-// Anchor tied to the recognized target
 const anchor = mindarThree.addAnchor(0);
 
-// Group we actually rotate with hand input, nested inside the anchor
 const modelGroup = new THREE.Group();
 anchor.group.add(modelGroup);
 
-let targetFound = false;
-const grabZone = document.getElementById('grab-zone');
-const grabLabel = document.getElementById('grab-label');
+// ---------------------------------------------------------------------
+// Rotation state — driven by dragging the circle button
+// ---------------------------------------------------------------------
+let targetRotY = 0;
+let targetRotX = 0;
+let curRotY = 0;
+let curRotX = 0;
 
-// Grab state: touching the circle toggles rotation control on/off
-let isGrabbed = false;
-let wasInsideZone = false;
-// Hand position at the moment of grabbing, plus the model rotation at that moment,
-// so rotation is relative to where you grabbed rather than jumping.
-let grabOriginX = 0;
-let grabOriginY = 0;
-let grabBaseRotY = 0;
-let grabBaseRotX = 0;
+let targetFound = false;
+
+let isDragging = false;
+let dragPointerId = null;
+let dragStartX = 0;
+let dragStartY = 0;
+let dragBaseRotY = 0;
+let dragBaseRotX = 0;
+
+// A drag across the full screen width turns the model a bit more than one full circle
+const ROTATE_SENSITIVITY = (Math.PI * 2.2) / (window.innerWidth || 400);
+
+grabZone.addEventListener('pointerdown', (e) => {
+  if (!targetFound) return;
+  e.preventDefault();
+  isDragging = true;
+  dragPointerId = e.pointerId;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  dragBaseRotY = targetRotY;
+  dragBaseRotX = targetRotX;
+  grabZone.setPointerCapture(e.pointerId);
+  grabZone.classList.add('grabbed');
+  grabLabel.textContent = 'Rotating';
+  statusEl.textContent = "Drag left or right to spin the model";
+});
+
+grabZone.addEventListener('pointermove', (e) => {
+  if (!isDragging || e.pointerId !== dragPointerId) return;
+  e.preventDefault();
+  targetRotY = dragBaseRotY + (e.clientX - dragStartX) * ROTATE_SENSITIVITY;
+  targetRotX = dragBaseRotX + (e.clientY - dragStartY) * ROTATE_SENSITIVITY * 0.6;
+});
+
+function endDrag(e) {
+  if (!isDragging) return;
+  if (e && e.pointerId !== dragPointerId) return;
+  isDragging = false;
+  dragPointerId = null;
+  grabZone.classList.remove('grabbed');
+  grabLabel.textContent = 'Drag';
+  if (targetFound) {
+    statusEl.textContent = "Drag the circle to rotate the model";
+  }
+}
+
+grabZone.addEventListener('pointerup', endDrag);
+grabZone.addEventListener('pointercancel', endDrag);
+
+resetBtn.addEventListener('click', () => {
+  targetRotY = 0;
+  targetRotX = 0;
+});
 
 anchor.onTargetFound = () => {
   targetFound = true;
-  statusEl.textContent = "Touch the red circle to grab the model";
+  grabZone.classList.add('visible');
+  resetBtn.classList.add('visible');
+  statusEl.textContent = "Drag the circle to rotate the model";
 };
 anchor.onTargetLost = () => {
   targetFound = false;
-  isGrabbed = false;
-  wasInsideZone = false;
-  grabZone.classList.remove('grabbed', 'visible');
-  grabLabel.textContent = 'Grab';
+  endDrag();
+  grabZone.classList.remove('visible');
+  resetBtn.classList.remove('visible');
   statusEl.textContent = "Point your camera at the target image";
 };
 
-// Model loading happens inside the async startup below.
+// ---------------------------------------------------------------------
+// Model
+// ---------------------------------------------------------------------
 function loadModel() {
   const loader = new STLLoader();
   loader.load(
     MODEL_SRC,
     (geometry) => {
-      // STL has no built-in color/texture — pick a flat material color here.
-      // (change 0x9fe1cb to whatever suits your object)
+      // STL carries geometry only — set the colour here
       const material = new THREE.MeshStandardMaterial({
         color: 0x9fe1cb,
         metalness: 0.1,
@@ -274,18 +299,17 @@ function loadModel() {
       if (!geometry.attributes.normal) {
         geometry.computeVertexNormals();
       }
-      geometry.center(); // centers the mesh at the origin
+      geometry.center();
 
       const model = new THREE.Mesh(geometry, material);
 
-      // Normalize scale so any model size looks reasonable on the target
       geometry.computeBoundingBox();
       const size = new THREE.Vector3();
       geometry.boundingBox.getSize(size);
       const maxDim = Math.max(size.x, size.y, size.z) || 1;
       const scale = 0.5 / maxDim;
       model.scale.setScalar(scale);
-      model.rotation.x = -Math.PI / 2; // STL is often Z-up; lay flat on the marker, adjust to taste
+      model.rotation.x = -Math.PI / 2; // STL is often Z-up; adjust if it looks wrong
 
       modelGroup.add(model);
     },
@@ -298,188 +322,15 @@ function loadModel() {
 }
 
 // ---------------------------------------------------------------------
-// Hand tracking: reuse MindAR's own camera <video> element for MediaPipe,
-// so we never call getUserMedia a second time.
-// ---------------------------------------------------------------------
-let handLandmarker = null;
-let lastVideoTime = -1;
-
-let targetRotY = 0;
-let targetRotX = 0;
-let curRotY = 0;
-let curRotX = 0;
-
-async function initHandTracking() {
-  const fileset = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-  );
-  handLandmarker = await HandLandmarker.createFromOptions(fileset, {
-    baseOptions: {
-      modelAssetPath:
-        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-    },
-    runningMode: "VIDEO",
-    numHands: 1,
-  });
-}
-
-function findMindARVideo() {
-  // MindAR injects its own <video> into the container as the camera feed
-  return document.querySelector('#container video');
-}
-
-// ---------------------------------------------------------------------
-// Hand skeleton overlay
-// ---------------------------------------------------------------------
-const overlayCanvas = document.getElementById('hand-overlay');
-const overlayCtx = overlayCanvas.getContext('2d');
-const handHint = document.getElementById('hand-hint');
-
-function isFingertipInZone(landmarks) {
-  const zoneRect = grabZone.getBoundingClientRect();
-  const containerRect = overlayCanvas.getBoundingClientRect();
-  // Index fingertip (8) is the pointer; fall back to wrist if missing
-  const tip = landmarks[8] || landmarks[0];
-  const tipX = containerRect.left + tip.x * containerRect.width;
-  const tipY = containerRect.top + tip.y * containerRect.height;
-
-  const cx = zoneRect.left + zoneRect.width / 2;
-  const cy = zoneRect.top + zoneRect.height / 2;
-  const radius = zoneRect.width / 2;
-  const dx = tipX - cx;
-  const dy = tipY - cy;
-  return (dx * dx + dy * dy) <= radius * radius;
-}
-
-function resizeOverlay() {
-  const rect = overlayCanvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  if (overlayCanvas.width !== rect.width * dpr || overlayCanvas.height !== rect.height * dpr) {
-    overlayCanvas.width = rect.width * dpr;
-    overlayCanvas.height = rect.height * dpr;
-  }
-}
-
-function drawHand(landmarks) {
-  resizeOverlay();
-  const w = overlayCanvas.width;
-  const h = overlayCanvas.height;
-  overlayCtx.clearRect(0, 0, w, h);
-
-  if (!landmarks) return;
-
-  const px = (i) => landmarks[i].x * w;
-  const py = (i) => landmarks[i].y * h;
-  const unit = Math.min(w, h);
-
-  overlayCtx.lineCap = 'round';
-  overlayCtx.lineJoin = 'round';
-
-  // Filled palm so the overlay reads as a hand, not a wireframe
-  const palm = [0, 1, 5, 9, 13, 17];
-  overlayCtx.beginPath();
-  overlayCtx.moveTo(px(palm[0]), py(palm[0]));
-  for (let i = 1; i < palm.length; i++) {
-    overlayCtx.lineTo(px(palm[i]), py(palm[i]));
-  }
-  overlayCtx.closePath();
-  overlayCtx.fillStyle = 'rgba(159, 225, 203, 0.28)';
-  overlayCtx.fill();
-  overlayCtx.strokeStyle = 'rgba(159, 225, 203, 0.9)';
-  overlayCtx.lineWidth = unit * 0.012;
-  overlayCtx.stroke();
-
-  // Fingers as thick strokes that taper toward the tips
-  const fingers = [
-    [1, 2, 3, 4],      // thumb
-    [5, 6, 7, 8],      // index
-    [9, 10, 11, 12],   // middle
-    [13, 14, 15, 16],  // ring
-    [17, 18, 19, 20],  // pinky
-  ];
-  overlayCtx.strokeStyle = 'rgba(159, 225, 203, 0.92)';
-  for (const finger of fingers) {
-    for (let i = 0; i < finger.length - 1; i++) {
-      // Segments get thinner the closer they are to the fingertip
-      const taper = 1 - (i / (finger.length - 1)) * 0.45;
-      overlayCtx.lineWidth = unit * 0.026 * taper;
-      overlayCtx.beginPath();
-      overlayCtx.moveTo(px(finger[i]), py(finger[i]));
-      overlayCtx.lineTo(px(finger[i + 1]), py(finger[i + 1]));
-      overlayCtx.stroke();
-    }
-  }
-
-  // Fingertips highlighted, other joints smaller
-  const tips = [4, 8, 12, 16, 20];
-  for (let i = 0; i < landmarks.length; i++) {
-    const isTip = tips.includes(i);
-    overlayCtx.beginPath();
-    overlayCtx.arc(px(i), py(i), unit * (isTip ? 0.013 : 0.008), 0, Math.PI * 2);
-    overlayCtx.fillStyle = isTip ? '#ffffff' : 'rgba(255,255,255,0.75)';
-    overlayCtx.fill();
-  }
-}
-
-function trackHands() {
-  const video = findMindARVideo();
-  if (video && handLandmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
-    lastVideoTime = video.currentTime;
-    const result = handLandmarker.detectForVideo(video, performance.now());
-
-    // The grab circle only matters once the model is actually on the target
-    grabZone.classList.toggle('visible', targetFound);
-
-    if (result.landmarks && result.landmarks.length > 0) {
-      const landmarks = result.landmarks[0];
-      const wrist = landmarks[0];
-
-      if (targetFound) {
-        const inside = isFingertipInZone(landmarks);
-        // Toggle on the moment the finger enters, not every frame it stays inside
-        if (inside && !wasInsideZone) {
-          isGrabbed = !isGrabbed;
-          if (isGrabbed) {
-            grabOriginX = wrist.x;
-            grabOriginY = wrist.y;
-            grabBaseRotY = targetRotY;
-            grabBaseRotX = targetRotX;
-          }
-          grabZone.classList.toggle('grabbed', isGrabbed);
-          grabLabel.textContent = isGrabbed ? 'Release' : 'Grab';
-        }
-        wasInsideZone = inside;
-
-        if (isGrabbed) {
-          // Full 360°+ of yaw across the width of the frame, relative to grab point
-          targetRotY = grabBaseRotY + (grabOriginX - wrist.x) * Math.PI * 2.2;
-          targetRotX = grabBaseRotX + (wrist.y - grabOriginY) * Math.PI * 1.1;
-        }
-      }
-
-      drawHand(landmarks);
-      handHint.classList.toggle('hidden', isGrabbed || !targetFound);
-    } else {
-      wasInsideZone = false;
-      drawHand(null);
-      handHint.classList.toggle('hidden', !targetFound);
-    }
-  }
-  requestAnimationFrame(trackHands);
-}
-
-// ---------------------------------------------------------------------
 // Render loop
 // ---------------------------------------------------------------------
-
 function animate() {
   renderer.setAnimationLoop(() => {
-    if (targetFound) {
-      curRotY += (targetRotY - curRotY) * 0.12;
-      curRotX += (targetRotX - curRotX) * 0.12;
-      modelGroup.rotation.y = curRotY;
-      modelGroup.rotation.x = curRotX;
-    }
+    // Ease toward the target rotation so dragging feels smooth
+    curRotY += (targetRotY - curRotY) * 0.15;
+    curRotX += (targetRotX - curRotX) * 0.15;
+    modelGroup.rotation.y = curRotY;
+    modelGroup.rotation.x = curRotX;
     renderer.render(scene, camera);
   });
 }
@@ -487,13 +338,10 @@ function animate() {
 (async () => {
   try {
     loadModel();
-
     statusEl.textContent = "Starting camera...";
     await mindarThree.start();
     animate();
     statusEl.textContent = "Point your camera at the target image";
-    await initHandTracking();
-    trackHands();
   } catch (err) {
     console.error(err);
     statusEl.style.background = 'rgba(180,0,0,0.85)';
