@@ -76,7 +76,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/loaders/STLLoader.js" onload="window.__checkpoint('Loading MindAR...')"></script>
 
 <!-- MindAR (image tracking + camera) -->
-<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js" onload="window.__checkpoint('MindAR loaded, starting app...')"></script>
+<script src="https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js" onload="window.__checkpoint('MindAR loaded, starting app...')" onerror="window.__checkpoint('Failed to load MindAR from unpkg')"></script>
 
 <!-- MediaPipe Hand Landmarker (hand tracking) -->
 <script type="module">
@@ -88,6 +88,12 @@ const statusEl = document.getElementById('status');
 // Replace with your compiled .mind target file and your 3D model.
 const TARGET_SRC = './assets/target.mind';
 const MODEL_SRC = './assets/model.stl';
+
+if (!window.MINDAR || !window.MINDAR.IMAGE) {
+  statusEl.style.background = 'rgba(180,0,0,0.85)';
+  statusEl.textContent = 'MindAR library did not load — check your internet connection or try a different network (WiFi vs mobile data).';
+  throw new Error('MindAR not available');
+}
 
 const mindarThree = new window.MINDAR.IMAGE.MindARThree({
   container: document.querySelector("#container"),
